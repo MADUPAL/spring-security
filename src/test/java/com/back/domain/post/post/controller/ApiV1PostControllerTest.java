@@ -29,8 +29,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 public class ApiV1PostControllerTest {
     @Autowired
     private MockMvc mvc;
+
     @Autowired
     private PostService postService;
+
+    @Autowired
+    private MemberService memberService;
 
     @Test
     @DisplayName("글 쓰기")
@@ -40,8 +44,8 @@ public class ApiV1PostControllerTest {
 
         ResultActions resultActions = mvc
                 .perform(
-                        post("/api/v1/posts?apiKey=" + actorApiKey)
-                                .header("Authorization", "Bearer " + actor.getApiKey())
+                        post("/api/v1/posts")
+                                .header("Authorization", "Bearer " + actorApiKey)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
@@ -70,11 +74,64 @@ public class ApiV1PostControllerTest {
     }
 
     @Test
-    @DisplayName("글 쓰기, without title")
-    void t7() throws Exception {
+    @DisplayName("글 쓰기, without authorization header")
+    void t10() throws Exception {
         ResultActions resultActions = mvc
                 .perform(
                         post("/api/v1/posts")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                            "title": "제목",
+                                            "content": "내용"
+                                        }
+                                        """)
+                )
+                .andDo(print());
+
+        resultActions
+                .andExpect(handler().handlerType(ApiV1PostController.class))
+                .andExpect(handler().methodName("write"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.resultCode").value("401-1"))
+                .andExpect(jsonPath("$.msg").value("로그인 후 이용해주세요."));
+    }
+
+    @Test
+    @DisplayName("글 쓰기, with wrong authorization header")
+    void t11() throws Exception {
+        ResultActions resultActions = mvc
+                .perform(
+                        post("/api/v1/posts")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .header("Authorization", "Bearer wrong-api-key")
+                                .content("""
+                                        {
+                                            "title": "제목",
+                                            "content": "내용"
+                                        }
+                                        """)
+                )
+                .andDo(print());
+
+        resultActions
+                .andExpect(handler().handlerType(ApiV1PostController.class))
+                .andExpect(handler().methodName("write"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.resultCode").value("401-3"))
+                .andExpect(jsonPath("$.msg").value("API 키가 유효하지 않습니다."));
+    }
+
+    @Test
+    @DisplayName("글 쓰기, without title")
+    void t7() throws Exception {
+        Member actor = memberService.findByUsername("user1").get();
+        String actorApiKey = actor.getApiKey();
+
+        ResultActions resultActions = mvc
+                .perform(
+                        post("/api/v1/posts")
+                                .header("Authorization", "Bearer " + actorApiKey)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
@@ -99,9 +156,13 @@ public class ApiV1PostControllerTest {
     @Test
     @DisplayName("글 쓰기, without content")
     void t8() throws Exception {
+        Member actor = memberService.findByUsername("user1").get();
+        String actorApiKey = actor.getApiKey();
+
         ResultActions resultActions = mvc
                 .perform(
                         post("/api/v1/posts")
+                                .header("Authorization", "Bearer " + actorApiKey)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
@@ -127,6 +188,9 @@ public class ApiV1PostControllerTest {
     @DisplayName("글 쓰기, with wrong json syntax")
     void t9() throws Exception {
 
+        Member actor = memberService.findByUsername("user1").get();
+        String actorApiKey = actor.getApiKey();
+
         String wrongJsonBody = """
                 {
                     "title": 제목",
@@ -136,6 +200,7 @@ public class ApiV1PostControllerTest {
         ResultActions resultActions = mvc
                 .perform(
                         post("/api/v1/posts")
+                                .header("Authorization", "Bearer " + actorApiKey)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(wrongJsonBody)
                 )
@@ -154,10 +219,14 @@ public class ApiV1PostControllerTest {
     @DisplayName("글 수정")
     void t2() throws Exception {
         int id = 1;
+        Post post = postService.findById(id).get();
+        Member actor = post.getAuthor();//fetch=LAZY이므로 프록시 객체 들어있음
+        String actorApiKey = actor.getApiKey();//여기서 member조회 쿼리 한번 나가지만 여전히 프록시 타입임 그래서 controller:modify함수에서 actor.equals가 아니라 id로 비교해야함
 
         ResultActions resultActions = mvc
                 .perform(
                         put("/api/v1/posts/" + id)
+                                .header("Authorization", "Bearer " + actorApiKey)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
@@ -177,13 +246,47 @@ public class ApiV1PostControllerTest {
     }
 
     @Test
+    @DisplayName("글 수정, without permission")
+    void t12() throws Exception {
+        int id = 1;
+
+        Member actor = memberService.findByUsername("user3").get();
+        String actorApiKey = actor.getApiKey();
+
+        ResultActions resultActions = mvc
+                .perform(
+                        put("/api/v1/posts/" + id)
+                                .header("Authorization", "Bearer " + actorApiKey)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                            "title": "제목 new",
+                                            "content": "내용 new"
+                                        }
+                                        """)
+                )
+                .andDo(print());
+
+        resultActions
+                .andExpect(handler().handlerType(ApiV1PostController.class))
+                .andExpect(handler().methodName("modify"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.resultCode").value("403-1"))
+                .andExpect(jsonPath("$.msg").value("%d번 글 수정권한이 없습니다.".formatted(id)));
+    }
+
+    @Test
     @DisplayName("글 삭제")
     void t3() throws Exception {
         int id = 1;
+        Post post = postService.findById(id).get();
+        Member actor = post.getAuthor();
+        String actorApiKey = actor.getApiKey();
 
         ResultActions resultActions = mvc
                 .perform(
                         delete("/api/v1/posts/" + id)
+                                .header("Authorization", "Bearer " + actorApiKey)
                 )
                 .andDo(print());
 
@@ -195,6 +298,28 @@ public class ApiV1PostControllerTest {
                 .andExpect(jsonPath("$.msg").value("%d번 글이 삭제되었습니다.".formatted(id)));
     }
 
+    @Test
+    @DisplayName("글 삭제, without permission")
+    void t13() throws Exception {
+        int id = 1;
+
+        Member actor = memberService.findByUsername("user3").get();
+        String actorApiKey = actor.getApiKey();
+
+        ResultActions resultActions = mvc
+                .perform(
+                        delete("/api/v1/posts/" + id)
+                                .header("Authorization", "Bearer " + actorApiKey)
+                )
+                .andDo(print());
+
+        resultActions
+                .andExpect(handler().handlerType(ApiV1PostController.class))
+                .andExpect(handler().methodName("delete"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.resultCode").value("403-2"))
+                .andExpect(jsonPath("$.msg").value("%d번 글 삭제권한이 없습니다.".formatted(id)));
+    }
 
     @Test
     @DisplayName("글 단건조회")
@@ -271,7 +396,4 @@ public class ApiV1PostControllerTest {
                     .andExpect(jsonPath("$[%d].content".formatted(i)).value(post.getContent()));
         }
     }
-
-    @Autowired
-    private MemberService memberService;
 }

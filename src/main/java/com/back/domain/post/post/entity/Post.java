@@ -2,13 +2,13 @@ package com.back.domain.post.post.entity;
 
 import com.back.domain.member.member.entity.Member;
 import com.back.domain.post.postComment.entity.PostComment;
+import com.back.global.exception.ServiceException;
 import com.back.global.jpa.entity.BaseEntity;
 import jakarta.persistence.Entity;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.apache.logging.log4j.util.Lazy;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -60,5 +60,15 @@ public class Post extends BaseEntity {
         if (postComment == null) return false;
 
         return comments.remove(postComment);
+    }
+
+    public void checkActorCanModify(Member actor) {
+        if (author.getId() != actor.getId())
+            throw new ServiceException("403-1", "%d번 글 수정권한이 없습니다.".formatted(getId()));
+    }
+
+    public void checkActorCanDelete(Member actor) {
+        if (author.getId() != actor.getId())
+            throw new ServiceException("403-2", "%d번 글 삭제권한이 없습니다.".formatted(getId()));
     }
 }
