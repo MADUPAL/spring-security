@@ -22,11 +22,21 @@ public class Member extends BaseEntity {
     @Column(unique = true)
     private String apiKey;// username, pw대신 쓸 난수
 
+    public Member(int id, String username, String name) {
+        setId(id);
+        this.username = username;
+        setName(name);
+    }
+
     public Member(String username, String password, String nickname) {
         this.username = username;
         this.password = password;
         this.nickname = nickname;
         this.apiKey = UUID.randomUUID().toString();
+    }
+
+    public void setName(String name) {
+        this.nickname = name;
     }
 
     //나중에 바뀔 것 같은 부분을 함수로 빼자

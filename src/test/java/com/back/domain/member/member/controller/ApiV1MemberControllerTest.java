@@ -2,6 +2,7 @@ package com.back.domain.member.member.controller;
 
 import com.back.domain.member.member.entity.Member;
 import com.back.domain.member.member.service.MemberService;
+import com.back.domain.post.post.controller.ApiV1PostController;
 import jakarta.servlet.http.Cookie;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.DisplayName;
@@ -60,6 +61,61 @@ public class ApiV1MemberControllerTest {
                 .andExpect(jsonPath("$.data.createDate").value(Matchers.startsWith(member.getCreateDate().toString().substring(0, 20))))
                 .andExpect(jsonPath("$.data.modifyDate").value(Matchers.startsWith(member.getModifyDate().toString().substring(0, 20))))
                 .andExpect(jsonPath("$.data.name").value(member.getName()));
+    }
+
+    @Test
+    @DisplayName("글 쓰기, with wrong apiKey, with valid accessToken")
+    void t14() throws Exception {
+        Member actor = memberService.findByUsername("user1").get();
+        String actorAccessToken = memberService.genAccessToken(actor);
+
+        ResultActions resultActions = mvc
+                .perform(
+                        post("/api/v1/posts")
+                                .header("Authorization", "Bearer wrong-api-key " + actorAccessToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                            "title": "제목",
+                                            "content": "내용"
+                                        }
+                                        """)
+                )
+                .andDo(print());
+
+        resultActions
+                .andExpect(handler().handlerType(ApiV1PostController.class))
+                .andExpect(handler().methodName("write"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    @DisplayName("글 쓰기, with wrong apiKey cookie, with valid accessToken cookie")
+    void t15() throws Exception {
+        Member actor = memberService.findByUsername("user1").get();
+        String actorAccessToken = memberService.genAccessToken(actor);
+
+        ResultActions resultActions = mvc
+                .perform(
+                        post("/api/v1/posts")
+                                .cookie(
+                                        new Cookie("apiKey", "wrong-api-key"),
+                                        new Cookie("accessToken", actorAccessToken)
+                                )
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                            "title": "제목",
+                                            "content": "내용"
+                                        }
+                                        """)
+                )
+                .andDo(print());
+
+        resultActions
+                .andExpect(handler().handlerType(ApiV1PostController.class))
+                .andExpect(handler().methodName("write"))
+                .andExpect(status().isCreated());
     }
 
     @Test
@@ -189,5 +245,38 @@ public class ApiV1MemberControllerTest {
                     assertThat(apiKeyCookie.getPath()).isEqualTo("/");
                     assertThat(apiKeyCookie.isHttpOnly()).isTrue();
                 });
+    }
+
+    @Test
+    @DisplayName("엑세스 토큰이 만료되었거나 유효하지 않다면 apiKey를 통해서 재발급")
+    void t7() throws Exception {
+        Member actor = memberService.findByUsername("user1").get();
+        String actorApiKey = actor.getApiKey();
+
+        ResultActions resultActions = mvc
+                .perform(
+                        get("/api/v1/members/me")
+                                .header("Authorization", "Bearer " + actorApiKey + " wrong-access-token")
+                )
+                .andDo(print());
+
+        resultActions
+                .andExpect(handler().handlerType(ApiV1MemberController.class))
+                .andExpect(handler().methodName("me"))
+                .andExpect(status().isOk());
+
+        resultActions.andExpect(
+                result -> {
+                    Cookie accessTokenCookie = result.getResponse().getCookie("accessToken");
+                    assertThat(accessTokenCookie.getValue()).isNotBlank();
+                    assertThat(accessTokenCookie.getPath()).isEqualTo("/");
+                    assertThat(accessTokenCookie.isHttpOnly()).isTrue();
+
+                    String headerAuthorization = result.getResponse().getHeader("Authorization");
+                    assertThat(headerAuthorization).isNotBlank();
+
+                    assertThat(headerAuthorization).isEqualTo(accessTokenCookie.getValue());
+                }
+        );
     }
 }
