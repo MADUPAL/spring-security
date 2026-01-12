@@ -1,6 +1,7 @@
 package com.back.domain.member.member.controller;
 
 import com.back.domain.member.member.dto.MemberDto;
+import com.back.domain.member.member.dto.MemberWithUsernameDto;
 import com.back.domain.member.member.entity.Member;
 import com.back.domain.member.member.service.MemberService;
 import com.back.global.exception.ServiceException;
@@ -76,8 +77,10 @@ public class ApiV1MemberController {
         Member member = memberService.findByUsername(reqBody.username())
                 .orElseThrow(() -> new ServiceException("401-1", "존재하지 않는 아이디입니다."));
 
-        if (!member.getPassword().equals(reqBody.password()))
-            throw new ServiceException("401-2", "비밀번호가 일치하지 않습니다.");
+        memberService.checkPassword(
+                member,
+                reqBody.password()
+        );
 
         String accessToken = memberService.genAccessToken(member);
 
@@ -96,7 +99,7 @@ public class ApiV1MemberController {
     }
 
     @GetMapping("/me")
-    public RsData<MemberDto> me() {
+    public RsData<MemberWithUsernameDto> me() {
         Member actor = memberService
                 .findById(rq.getActor().getId())
                 .get();
@@ -104,7 +107,7 @@ public class ApiV1MemberController {
         return new RsData<>(
                 "200-1",
                 "%s님의 정보입니다.".formatted(actor.getName()),
-                new MemberDto(actor)
+                new MemberWithUsernameDto (actor)
         );
     }
 
